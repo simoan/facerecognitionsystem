@@ -1,11 +1,11 @@
-#define radiusLBP 1
-#define neighborsLBP 8
+#define radiusLBP 1       // 1
+#define neighborsLBP 8   // 16
 #define gridX 8
-#define gridY 8 
+#define gridY 8
 #define thresholdLBP 10000
 
-#define sizeGauss 35
-#define factorGauss 0.6
+#define sizeGauss 9  // 9 is smallest kernel
+#define sigmaGauss 20  // small deviation: means not much blurring, big deviation: a lot of blurring
 
 #define numberOfLabels 10  // uses either whole database or only family
 
@@ -13,14 +13,14 @@
 #define linIncrement 0
 #define numberIterations 100  // how often it will be incremented
 
-#define trainingSet 4  // t1, t2,...
-#define sampleSet 3    // s1, s2,...
-#define newModelTrue 0
-#define liveModeTrue 1
+#define trainingSet 8 // t1, t2,...
+#define sampleSet  4   // s1, s2,...
+#define newModelTrue 1
+#define liveModeTrue 0
 #define imwriteTrue 0
 
-#define sizeWidth 368     // 92
-#define sizeHeight 448    // 112
+#define sizeWidth 92   // 92, 368
+#define sizeHeight 112    // 112, 448
 
 #include "opencv2/core.hpp"
 #include "opencv2/highgui.hpp"
@@ -48,7 +48,7 @@ String save_results = "save.txt";
 void preprocessing(Mat& face)
 {
 	cv::cvtColor(face, face, COLOR_BGR2GRAY);
-	cv::GaussianBlur(face, face, Size(sizeGauss, sizeGauss), factorGauss, factorGauss);
+	cv::GaussianBlur(face, face, Size(sizeGauss, sizeGauss), sigmaGauss, sigmaGauss);
 	equalizeHist(face, face);
 }
 
@@ -91,13 +91,13 @@ static void read_csv(const string& filename, vector<Mat>& images, vector<int>& l
 		if (!path.empty() && !classlabel.empty()) 
 		{
 			loadedIm = imread(path, CV_LOAD_IMAGE_COLOR); 
-			if ((loadedIm.rows != 112) && (loadedIm.cols != 92))   // AT&T format, they are grayscale and cropped already
+			if ((loadedIm.rows != sizeHeight) && (loadedIm.cols != sizeWidth))   // AT&T format, they are grayscale and cropped already
 			{
 				face_cascade.detectMultiScale(loadedIm, faces, 1.1, 2, 0 | CASCADE_SCALE_IMAGE, Size(130, 10));
-				for (int i = 0; i < faces.size(); i++)   // usually this should be one face
+				if (faces.size() == 1)   // usually this should be one face, otherwise wrong data
 				{
-					loadedIm = cropping(loadedIm, faces[i], 0);
-					cv::resize(loadedIm, loadedIm, Size(sizeWidth, sizeHeight), 0, 0, CV_INTER_LINEAR);
+					loadedIm = cropping(loadedIm, faces[0], 0);
+					cv::resize(loadedIm, loadedIm, Size(sizeWidth, sizeHeight), 0, 0, CV_INTER_LINEAR);  // 1,1, NN better?
 					if (imwriteTrue) imwrite(path, loadedIm);
 					preprocessing(loadedIm);
 					images.push_back(loadedIm);						 
@@ -149,7 +149,7 @@ int liveDetection(Ptr<LBPHFaceRecognizer> modelLBP, Ptr<BasicFaceRecognizer> mod
 			ellipse(frame, center, Size(faces[i].width / 2, faces[i].height / 2), 0, 0, 360, Scalar(255, 0, 255), 4, 8, 0);
 
 			crop = frame_gray(faces[i]);
-			cv::GaussianBlur(crop, crop, Size(sizeGauss, sizeGauss), factorGauss, factorGauss);
+			cv::GaussianBlur(crop, crop, Size(sizeGauss, sizeGauss), sigmaGauss, sigmaGauss);
 			
 			cv::resize(crop, crop, Size(sizeWidth, sizeHeight), 0, 0, CV_INTER_LINEAR);
 			modelLBP->predict(crop, predLabel, predConfidence);
@@ -204,8 +204,8 @@ int main(int argc, const char *argv[])
 	}
 
 	Ptr<LBPHFaceRecognizer> modelLBP = createLBPHFaceRecognizer(radiusLBP,neighborsLBP, gridX, gridX, thresholdLBP);
-	Ptr<BasicFaceRecognizer> modelFisher = createFisherFaceRecognizer(50);
-	Ptr<BasicFaceRecognizer> modelEigen = createEigenFaceRecognizer(50);
+	Ptr<BasicFaceRecognizer> modelFisher = createFisherFaceRecognizer();
+	Ptr<BasicFaceRecognizer> modelEigen = createEigenFaceRecognizer();
 
 	if (newModelTrue)  // create new model
 	{
@@ -254,7 +254,8 @@ int main(int argc, const char *argv[])
 	double predConfidence;
 	if (!liveModeTrue)
 	{
-		cout << "START !!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
+		cout << "START!! Gauss: " << sigmaGauss << " Gauss size: " << sizeGauss <<" training: " << trainingSet << "samples: " << sampleSet << endl;
+		cout << "RadiusLBP: " << radiusLBP << " surrounding neigbhors: " << neighborsLBP << " gridx: " << gridX << " gridy: " << gridY << endl;
 		cout << "Local Binary Pattern" << endl;
 		for (int i = 0; i < images_s.size(); i++)
 		{
