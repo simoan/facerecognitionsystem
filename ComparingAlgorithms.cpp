@@ -1,11 +1,11 @@
 #define radiusLBP 1       // 1
-#define neighborsLBP 8   // 16
+#define neighborsLBP 8 // 16
 #define gridX 8
 #define gridY 8
 #define thresholdLBP 10000
 
-#define sizeGauss 9  // 9 is smallest kernel
-#define sigmaGauss 20  // small deviation: means not much blurring, big deviation: a lot of blurring
+#define sizeGauss 3 // 3x3 is smallest kernel, 
+#define sigmaGauss 60  // small deviation: means not much blurring, big deviation: a lot of blurring
 
 #define numberOfLabels 10  // uses either whole database or only family
 
@@ -13,14 +13,16 @@
 #define linIncrement 0
 #define numberIterations 100  // how often it will be incremented
 
-#define trainingSet 8 // t1, t2,...
+#define trainingSet 10 // t1, t2,...
 #define sampleSet  4   // s1, s2,...
 #define newModelTrue 1
-#define liveModeTrue 0
+#define liveModeTrue 1
 #define imwriteTrue 0
 
-#define sizeWidth 92   // 92, 368
-#define sizeHeight 112    // 112, 448
+#define cutMorePercentWidth 10 //  cuts 5% from each side more than detected face
+
+#define sizeWidth 184  // 92, 368
+#define sizeHeight 224    // 112, 448
 
 #include "opencv2/core.hpp"
 #include "opencv2/highgui.hpp"
@@ -39,10 +41,16 @@ using namespace std;
 // for detecting faces and pre-processing them accordingly
 String face_cascade_name = "haarcascade_frontalface_alt.xml";
 String eyes_cascade_name = "haarcascade_eye_tree_eyeglasses.xml";
-CascadeClassifier face_cascade;
+CascadeClassifier face_cascade, eyes_cascade;
 
 // 
 String save_results = "save.txt";
+
+// apply eyer centering horizontal, BEFORE: ROTATION MUST BE PERFORMED
+void EyeCenteringHorizontal(cv::Mat im)
+{
+
+}
 
 // detect face, crop, resize, gray conversion, equalization, (normalization??), gauss
 void preprocessing(Mat& face)
@@ -52,15 +60,27 @@ void preprocessing(Mat& face)
 	equalizeHist(face, face);
 }
 
-Mat cropping(Mat face, Rect region, int circleTrue = 0)
+Mat cropping(Mat face, Rect region, int moreWidth = 0)
 {
 	Mat face2;
-	Point center(region.x + region.width / 2, region.y + region.height / 2);
-	if (circleTrue)
+	Point center2;
+
+	// Rect specifies top left corner (x,y) and width, heigth
+	if ((cutMorePercentWidth > 0) && (cutMorePercentWidth < 30) && (moreWidth == 1))
+	{
+		region.x = int(region.x + region.width*cutMorePercentWidth/100.0);
+		region.width = int(region.width * (1 - 2*cutMorePercentWidth/100.0));
+	}
+	else
+	{
+		//Point center(region.x + region.width / 2, region.y + region.height / 2);
+	}
+	
+	if (0)
 	{
 		cv::cvtColor(face, face, COLOR_BGR2GRAY);
 		Mat backup(face.rows, face.cols, CV_8UC1, Scalar(0, 0, 0));
-		ellipse(face, center, Size(region.width / 2, region.height / 2), 0, 0, 360, Scalar(255, 0, 255), 4, 8, 0);  // face = face(ellipse)
+		ellipse(face, center2, Size(region.width / 2, region.height / 2), 0, 0, 360, Scalar(255, 0, 255), 4, 8, 0);  // face = face(ellipse)
 		bitwise_and(face, backup, face2);
 		imshow("AND", face);
 		imwrite("C:/Users/Simon/Desktop/OpenCV/cleanup/im.jpg", face2);
@@ -79,6 +99,7 @@ static void read_csv(const string& filename, vector<Mat>& images, vector<int>& l
 		string error_message = "No valid input file was given, please check the given filename.";
 		CV_Error(Error::StsBadArg, error_message);
 	}
+	int bigImNoFace = 0;
 	string line, path, classlabel;
 	cv::Mat loadedIm;
 	std::vector<Rect> faces;
@@ -94,9 +115,11 @@ static void read_csv(const string& filename, vector<Mat>& images, vector<int>& l
 			if ((loadedIm.rows != sizeHeight) && (loadedIm.cols != sizeWidth))   // AT&T format, they are grayscale and cropped already
 			{
 				face_cascade.detectMultiScale(loadedIm, faces, 1.1, 2, 0 | CASCADE_SCALE_IMAGE, Size(130, 10));
+				bigImNoFace = 1;
 				if (faces.size() == 1)   // usually this should be one face, otherwise wrong data
 				{
-					loadedIm = cropping(loadedIm, faces[0], 0);
+					bigImNoFace = 0;
+					loadedIm = cropping(loadedIm, faces[0], 1);
 					cv::resize(loadedIm, loadedIm, Size(sizeWidth, sizeHeight), 0, 0, CV_INTER_LINEAR);  // 1,1, NN better?
 					if (imwriteTrue) imwrite(path, loadedIm);
 					preprocessing(loadedIm);
@@ -106,7 +129,17 @@ static void read_csv(const string& filename, vector<Mat>& images, vector<int>& l
 			}
 			else
 			{
+				bigImNoFace = 0;
 				preprocessing(loadedIm);
+				if (imwriteTrue) cv::imwrite(path, loadedIm);
+				images.push_back(loadedIm);						 // images are loaded from path with imread() in grayscale and allocated next to each other
+				labels.push_back(atoi(classlabel.c_str()));  // labels are for images are allocated next to each other
+			}
+			if (bigImNoFace)
+			{
+				bigImNoFace = 0;
+				preprocessing(loadedIm);
+				cv::resize(loadedIm, loadedIm, Size(sizeWidth, sizeHeight), 0, 0, CV_INTER_LINEAR);  // 1,1, NN better?
 				if (imwriteTrue) cv::imwrite(path, loadedIm);
 				images.push_back(loadedIm);						 // images are loaded from path with imread() in grayscale and allocated next to each other
 				labels.push_back(atoi(classlabel.c_str()));  // labels are for images are allocated next to each other
@@ -118,10 +151,11 @@ static void read_csv(const string& filename, vector<Mat>& images, vector<int>& l
 int liveDetection(Ptr<LBPHFaceRecognizer> modelLBP, Ptr<BasicFaceRecognizer> modelFisher, Ptr<BasicFaceRecognizer> modelEigen)
 {
 	VideoCapture capture;
-	Mat frame, crop;
+	Mat frame, crop, cropM;
 	int predLabel = -1;
 	double predConfidence = -1;
 	if (!face_cascade.load(face_cascade_name)) { printf("--(!)Error loading\n"); return -1; };
+	if (!eyes_cascade.load(eyes_cascade_name)) { printf("--(!)Error loading eyes cascade\n"); return -1; };
 	capture.open(0);
 	if (!capture.isOpened()) { printf("--(!)Error opening video capture\n"); return -1; }
 
@@ -148,7 +182,11 @@ int liveDetection(Ptr<LBPHFaceRecognizer> modelLBP, Ptr<BasicFaceRecognizer> mod
 			Point center(faces[i].x + faces[i].width / 2, faces[i].y + faces[i].height / 2);
 			ellipse(frame, center, Size(faces[i].width / 2, faces[i].height / 2), 0, 0, 360, Scalar(255, 0, 255), 4, 8, 0);
 
-			crop = frame_gray(faces[i]);
+			//crop = frame_gray(faces[i]);
+			crop = cropping(frame_gray, faces[i], 0);
+			imshow("normal", crop);
+			cropM = cropping(frame_gray, faces[i], 1);
+			imshow("moreWidth", cropM);
 			cv::GaussianBlur(crop, crop, Size(sizeGauss, sizeGauss), sigmaGauss, sigmaGauss);
 			
 			cv::resize(crop, crop, Size(sizeWidth, sizeHeight), 0, 0, CV_INTER_LINEAR);
@@ -166,9 +204,22 @@ int liveDetection(Ptr<LBPHFaceRecognizer> modelLBP, Ptr<BasicFaceRecognizer> mod
 			putText(frame, textFisher, center, FONT_HERSHEY_SIMPLEX, 1, 0, 2);
 			center.y = center.y + 50;
 			putText(frame, textEigen, center, FONT_HERSHEY_SIMPLEX, 1, 0, 2);
+
+			//std::vector<Rect> eyes;
+			////-- In each face, detect eyes
+			//eyes_cascade.detectMultiScale(crop, eyes, 1.1, 2, 0 | CASCADE_SCALE_IMAGE, Size(20, 20));
+
+			//for (size_t j = 0; j < eyes.size(); j++)
+			//{
+			//	Point eye_center(faces[i].x + eyes[j].x + eyes[j].width / 2, faces[i].y + eyes[j].y + eyes[j].height / 2);
+			//	int radius = cvRound((eyes[j].width + eyes[j].height)*0.25);
+			//	circle(frame, eye_center, radius, Scalar(255, 0, 0), 4, 8, 0);
+			//}
+
 		}		
 		//-- Show what you got
 		imshow("detectedFace", frame);
+
 		int c = waitKey(33);
 		if ((char)c == 27) { break; } // escape
 	}
@@ -204,7 +255,7 @@ int main(int argc, const char *argv[])
 	}
 
 	Ptr<LBPHFaceRecognizer> modelLBP = createLBPHFaceRecognizer(radiusLBP,neighborsLBP, gridX, gridX, thresholdLBP);
-	Ptr<BasicFaceRecognizer> modelFisher = createFisherFaceRecognizer();
+	Ptr<BasicFaceRecognizer> modelFisher = createFisherFaceRecognizer(0);
 	Ptr<BasicFaceRecognizer> modelEigen = createEigenFaceRecognizer();
 
 	if (newModelTrue)  // create new model
@@ -254,8 +305,9 @@ int main(int argc, const char *argv[])
 	double predConfidence;
 	if (!liveModeTrue)
 	{
-		cout << "START!! Gauss: " << sigmaGauss << " Gauss size: " << sizeGauss <<" training: " << trainingSet << "samples: " << sampleSet << endl;
-		cout << "RadiusLBP: " << radiusLBP << " surrounding neigbhors: " << neighborsLBP << " gridx: " << gridX << " gridy: " << gridY << endl;
+		cout << "START!! Gauss: " << sigmaGauss << " Gauss size: " << sizeGauss <<" training: " << trainingSet << " samples: " << sampleSet << endl;
+		cout << "RadiusLBP: " << radiusLBP << " LBP neigbhors: " << neighborsLBP << " gridx: " << gridX << " gridy: " << gridY << endl;
+		cout << "cut more width in % " << cutMorePercentWidth << endl;
 		cout << "Local Binary Pattern" << endl;
 		for (int i = 0; i < images_s.size(); i++)
 		{
