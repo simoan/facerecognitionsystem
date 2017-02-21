@@ -36,8 +36,12 @@ net = openface.TorchNeuralNet("/home/pi/openface/models/openface/nn4.v1.ascii.t7
 
 
 def init():
-   label = 0 
+   label = -1 
+   numPersonsDB = 2
+   numPicsPP = 10
+   rep_arr = np.zeros((128, numPicsPP, numPersonsDB))
    for dirpath, dirnames, filenames in os.walk("/home/pi/Pictures"):
+          dim = 0
           for subdirname in filenames:
              subject_path = os.path.join(dirpath, subdirname)
              print(subject_path)
@@ -46,11 +50,20 @@ def init():
              rgbImg = cv2.cvtColor(bgrImg, cv2.COLOR_BGR2RGB)
              bb = align.getLargestFaceBoundingBox(rgbImg)
              rep = getRep(bb, rgbImg)
-             print(rep)
+             rep_arr[:, dim, label] = rep
+             #if dim == 0: rep_arr = rep
+             #else: rep_arr = np.concatenate((rep_arr, rep), dim)
+             #if dim is 0: rep_arr = np.expand_dims(rep, dim)
+             #if dim > 0: rep_arr = np.expand_dims(rep_arr, dim)
+             #rep_arr[:, dim] = rep
+             print(rep_arr)
              cv2.waitKey(1000)
+             dim = dim + 1
           print(label)
           label = label + 1
-
+   print("FINISHED LOADING DATABASE!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+   np.save('/home/pi/openface/DB_rep', rep_arr)
+   print("FINSIHED SAVING :) ")
 
 
 
@@ -63,8 +76,11 @@ def getRep(bb, rgbImg):
      rep = net.forward(alignedFace)
      return rep
 
-init()
- 
+
+
+#init()
+db_rep = np.load('/home/pi/openface/DB_rep.npy')
+print(db_rep)
 # capture frames from the camera
 for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
 	# grab the raw NumPy array representing the image, then initialize the timestamp
