@@ -29,21 +29,41 @@ rawCapture = PiRGBArray(camera, size=(640, 480))
 # allow the camera to warmup
 time.sleep(0.1)
 
+
 face_cascade = cv2.CascadeClassifier('/home/pi/Desktop/haarcascade_frontalface_alt.xml')
 align = openface.AlignDlib("/home/pi/openface/models/dlib/shape_predictor_68_face_landmarks.dat")
 net = openface.TorchNeuralNet("/home/pi/openface/models/openface/nn4.v1.ascii.t7", 96)
 
 
-def getRep(bb, rgbImg):
+def init():
+   label = 0 
+   for dirpath, dirnames, filenames in os.walk("/home/pi/Pictures"):
+          for subdirname in filenames:
+             subject_path = os.path.join(dirpath, subdirname)
+             print(subject_path)
+             bgrImg = cv2.imread(subject_path)
+             cv2.imshow("bgr", bgrImg)
+             rgbImg = cv2.cvtColor(bgrImg, cv2.COLOR_BGR2RGB)
+             bb = align.getLargestFaceBoundingBox(rgbImg)
+             rep = getRep(bb, rgbImg)
+             print(rep)
+             cv2.waitKey(1000)
+          print(label)
+          label = label + 1
 
-     start = time.time()
+
+
+
+def getRep(bb, rgbImg):
      alignedFace = align.align(96, rgbImg, bb,
                               landmarkIndices=openface.AlignDlib.OUTER_EYES_AND_NOSE)
 
-     start = time.time()
+     # show the frame
+     cv2.imshow("aligned", alignedFace)
      rep = net.forward(alignedFace)
      return rep
 
+init()
  
 # capture frames from the camera
 for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
